@@ -1,6 +1,7 @@
 # Custom OpenClaw image with extended skill dependencies
 # Extends the official image with commonly needed binaries
-FROM ghcr.io/openclaw/openclaw:main
+ARG OPENCLAW_VERSION=2026.3.8
+FROM ghcr.io/openclaw/openclaw:${OPENCLAW_VERSION}
 
 USER root
 

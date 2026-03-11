@@ -1,7 +1,7 @@
 name: Build Custom OpenClaw Image
 
 on:
-  # Daily check at 06:00 UTC
+  # Daily check at 06:00 UTC for new stable releases
   schedule:
     - cron: "0 6 * * *"
 
@@ -9,13 +9,18 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: "Force rebuild even if base image hasn't changed"
+        description: "Force rebuild even if base version hasn't changed"
         required: false
         default: "false"
         type: choice
         options:
           - "false"
           - "true"
+      version_override:
+        description: "Pin to a specific OpenClaw version (e.g. 2026.3.7). Leave empty for latest stable."
+        required: false
+        default: ""
+        type: string
 
   # Rebuild when the Dockerfile itself changes
   push:
@@ -25,8 +30,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BASE_IMAGE: ghcr.io/openclaw/openclaw:main
-  # IMAGE_NAME is set dynamically from the repo name (e.g., ghcr.io/yourusername/openclaw-custom)
+  UPSTREAM_IMAGE: ghcr.io/openclaw/openclaw
 
 jobs:
   check-and-build:
@@ -49,34 +53,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull base image and get digest
-        id: base
+      - name: Fetch latest stable OpenClaw release
+        id: release
         run: |
-          docker pull "$BASE_IMAGE"
-          BASE_DIGEST=$(docker inspect "$BASE_IMAGE" --format='{{index .RepoDigests 0}}' | cut -d'@' -f2)
-          echo "digest=$BASE_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Base image digest: $BASE_DIGEST"
-
-      - name: Get previous base digest from our latest image
-        id: previous
-        run: |
-          # Try to pull our existing image to read its label
-          if docker pull "$IMAGE_NAME:latest" 2>/dev/null; then
-            PREV_DIGEST=$(docker inspect "$IMAGE_NAME:latest" --format='{{index .Config.Labels "org.openclaw.base-digest"}}' 2>/dev/null || echo "")
-            echo "digest=$PREV_DIGEST" >> "$GITHUB_OUTPUT"
-            echo "Previous base digest: $PREV_DIGEST"
+          OVERRIDE="${{ github.event.inputs.version_override }}"
+          if [ -n "$OVERRIDE" ]; then
+            echo "version=$OVERRIDE" >> "$GITHUB_OUTPUT"
+            echo "Using manual override: $OVERRIDE"
           else
-            echo "digest=" >> "$GITHUB_OUTPUT"
+            TAG_NAME=$(curl -fsSL \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/openclaw/openclaw/releases/latest \
+              | jq -r '.tag_name')
+            VERSION="${TAG_NAME#v}"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Latest stable release: $VERSION (git tag: $TAG_NAME)"
+          fi
+
+      - name: Verify upstream container tag exists
+        id: verify
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          if docker manifest inspect "${{ env.UPSTREAM_IMAGE }}:${VERSION}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Verified: ${{ env.UPSTREAM_IMAGE }}:${VERSION} exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Container tag ${{ env.UPSTREAM_IMAGE }}:${VERSION} not found — skipping build"
+          fi
+
+      - name: Get previous base version from our latest image
+        id: previous
+        if: steps.verify.outputs.exists == 'true'
+        run: |
+          if docker pull "$IMAGE_NAME:latest" 2>/dev/null; then
+            PREV_VERSION=$(docker inspect "$IMAGE_NAME:latest" \
+              --format='{{index .Config.Labels "org.openclaw.base-version"}}' 2>/dev/null || echo "")
+            echo "version=$PREV_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Previous base version: ${PREV_VERSION:-<none>}"
+          else
+            echo "version=" >> "$GITHUB_OUTPUT"
             echo "No previous image found — first build"
           fi
 
       - name: Decide whether to build
         id: decision
+        if: steps.verify.outputs.exists == 'true'
         run: |
           FORCE="${{ github.event.inputs.force_build || 'false' }}"
           EVENT="${{ github.event_name }}"
-          BASE="${{ steps.base.outputs.digest }}"
-          PREV="${{ steps.previous.outputs.digest }}"
+          LATEST="${{ steps.release.outputs.version }}"
+          PREV="${{ steps.previous.outputs.version }}"
 
           if [ "$FORCE" = "true" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
@@ -87,15 +115,13 @@ jobs:
           elif [ -z "$PREV" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
             echo "reason=No previous build found" >> "$GITHUB_OUTPUT"
-          elif [ "$BASE" != "$PREV" ]; then
+          elif [ "$LATEST" != "$PREV" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
-            echo "reason=Base image updated ($PREV → $BASE)" >> "$GITHUB_OUTPUT"
+            echo "reason=New upstream release ($PREV → $LATEST)" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "reason=Base image unchanged" >> "$GITHUB_OUTPUT"
+            echo "reason=Already on latest ($LATEST)" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "Decision: $(cat "$GITHUB_OUTPUT" | grep reason | cut -d= -f2)"
 
       - name: Set up Docker Buildx
         if: steps.decision.outputs.build == 'true'
@@ -107,11 +133,14 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            OPENCLAW_VERSION=${{ steps.release.outputs.version }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.release.outputs.version }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           labels: |
-            org.openclaw.base-digest=${{ steps.base.outputs.digest }}
+            org.openclaw.base-version=${{ steps.release.outputs.version }}
             org.openclaw.build-reason=${{ steps.decision.outputs.reason }}
             org.openclaw.build-date=${{ github.event.repository.updated_at }}
           cache-from: type=gha
@@ -121,11 +150,13 @@ jobs:
         run: |
           echo "### Build Result" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.decision.outputs.build }}" = "true" ]; then
+          if [ "${{ steps.verify.outputs.exists }}" != "true" ]; then
+            echo "⚠️ **Skipped** — container tag \`${{ env.UPSTREAM_IMAGE }}:${{ steps.release.outputs.version }}\` not found yet" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.decision.outputs.build }}" = "true" ]; then
             echo "✅ **Built and pushed** — ${{ steps.decision.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- Image: \`${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Base digest: \`${{ steps.base.outputs.digest }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- OpenClaw version: \`${{ steps.release.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⏭️ **Skipped** — ${{ steps.decision.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
           fi

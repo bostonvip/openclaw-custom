@@ -2,7 +2,7 @@
 
 Custom [OpenClaw](https://github.com/openclaw/openclaw) Docker image with extended skill dependencies.
 
-Built automatically on top of the official `ghcr.io/openclaw/openclaw:main` image, adding commonly needed binaries that many OpenClaw skills require but aren't present in the minimal official image.
+Built automatically on top of official stable [OpenClaw releases](https://github.com/openclaw/openclaw/releases), adding commonly needed binaries that many OpenClaw skills require but aren't present in the minimal official image. Tracks only non-beta releases (e.g., `2026.3.8`), never `:main`.
 
 ## What's Added
 
@@ -36,9 +36,9 @@ services:
 
 ## Build Schedule
 
-- **Automatic:** Checks daily at 06:00 UTC for updates to the official OpenClaw base image. Only rebuilds if the base image has changed.
+- **Automatic:** Checks daily at 06:00 UTC for new stable OpenClaw releases via the GitHub API. Only rebuilds when a new version is published (e.g., `2026.3.7` → `2026.3.8`). Pre-releases and betas are ignored.
 - **On Dockerfile change:** Rebuilds when the Dockerfile is updated on `main`.
-- **On demand:** Trigger manually from the Actions tab with optional force rebuild.
+- **On demand:** Trigger manually from the Actions tab with optional force rebuild or version override (e.g., pin to `2026.3.7` for rollback).
 
 ## Updating in Docker
 
