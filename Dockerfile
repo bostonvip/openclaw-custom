@@ -24,6 +24,8 @@ RUN apt-get update && \
       curl \
       ripgrep \
       ffmpeg \
+      openssh-client \
+      procps \      
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (fast Python package manager — used by Gemini image gen and other skills)
