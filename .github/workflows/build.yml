@@ -71,6 +71,17 @@ jobs:
             echo "Latest stable release: $VERSION (git tag: $TAG_NAME)"
           fi
 
+      - name: Fetch latest supercronic release
+        id: supercronic
+        run: |
+          TAG=$(curl -fsSL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/aptible/supercronic/releases/latest \
+            | jq -r '.tag_name')
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Latest supercronic release: $TAG"
+
       - name: Verify upstream container tag exists
         id: verify
         run: |
@@ -165,6 +176,7 @@ jobs:
             OPENCLAW_VERSION=${{ steps.release.outputs.version }}
             OPENCLAW_EP=${{ steps.base_inspect.outputs.ep }}
             OPENCLAW_CMD=${{ steps.base_inspect.outputs.cmd }}
+            SUPERCRONIC_VERSION=${{ steps.supercronic.outputs.version }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ steps.release.outputs.version }}
@@ -174,7 +186,7 @@ jobs:
             org.openclaw.base-version=${{ steps.release.outputs.version }}
             org.openclaw.build-reason=${{ steps.decision.outputs.reason }}
             org.openclaw.build-date=${{ github.run_started_at }}
-            org.openclaw.supercronic-version=v0.2.33
+            org.openclaw.supercronic-version=${{ steps.supercronic.outputs.version }}
             org.openclaw.includes-vscode-tunnel=true
             org.openclaw.includes-cron=true
             org.openclaw.baked-entrypoint=${{ steps.base_inspect.outputs.ep }}
@@ -197,7 +209,7 @@ jobs:
             echo "- OpenClaw version: \`${{ steps.release.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- Baked EP: \`${{ steps.base_inspect.outputs.ep }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- Baked CMD: \`${{ steps.base_inspect.outputs.cmd }}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Supercronic: \`v0.2.33\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Supercronic: \`${{ steps.supercronic.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- VS Code tunnel: \`enabled\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⏭️ **Skipped** — ${{ steps.decision.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"

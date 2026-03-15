@@ -48,9 +48,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # ╔════════════════════════════════════════════════════════════════════════╗
 # ║  BLOCK 1: Install Supercronic                                          ║
 # ╚════════════════════════════════════════════════════════════════════════╝
-                                     
+
+ARG SUPERCRONIC_VERSION=v0.2.44
+
 RUN ARCH=$(dpkg --print-architecture) && \
-    SUPERCRONIC_VERSION="v0.2.33" && \
     if [ "$ARCH" = "amd64" ]; then \
       SUPERCRONIC_URL="https://github.com/aptible/supercronic/releases/download/${SUPERCRONIC_VERSION}/supercronic-linux-amd64"; \
     elif [ "$ARCH" = "arm64" ]; then \
