@@ -83,6 +83,34 @@ jobs:
             echo "::warning::Container tag ${{ env.UPSTREAM_IMAGE }}:${VERSION} not found — skipping build"
           fi
 
+      - name: Inspect base image for entrypoint and command
+        id: base_inspect
+        if: steps.verify.outputs.exists == 'true'
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          BASEIMAGE="${{ env.UPSTREAM_IMAGE }}:${VERSION}"
+          
+          echo "Pulling base image: $BASEIMAGE"
+          docker pull "$BASEIMAGE"
+          
+          # Extract entrypoint (array joined with spaces)
+          EP=$(docker inspect "$BASEIMAGE" \
+            --format '{{range .Config.Entrypoint}}{{.}} {{end}}' | sed 's/[[:space:]]*$//')
+          
+          # Extract command (array joined with spaces)
+          CMD=$(docker inspect "$BASEIMAGE" \
+            --format '{{range .Config.Cmd}}{{.}} {{end}}' | sed 's/[[:space:]]*$//')
+          
+          # Provide defaults if empty (shouldn't happen with official image)
+          EP="${EP:-docker-entrypoint.sh}"
+          CMD="${CMD:-node /app/dist/index.js}"
+          
+          echo "ep=$EP" >> "$GITHUB_OUTPUT"
+          echo "cmd=$CMD" >> "$GITHUB_OUTPUT"
+          
+          echo "Captured entrypoint: $EP"
+          echo "Captured command:    $CMD"
+
       - name: Get previous base version from our latest image
         id: previous
         if: steps.verify.outputs.exists == 'true'
@@ -135,18 +163,28 @@ jobs:
           push: true
           build-args: |
             OPENCLAW_VERSION=${{ steps.release.outputs.version }}
+            OPENCLAW_EP=${{ steps.base_inspect.outputs.ep }}
+            OPENCLAW_CMD=${{ steps.base_inspect.outputs.cmd }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ steps.release.outputs.version }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          
           labels: |
             org.openclaw.base-version=${{ steps.release.outputs.version }}
             org.openclaw.build-reason=${{ steps.decision.outputs.reason }}
-            org.openclaw.build-date=${{ github.event.repository.updated_at }}
+            org.openclaw.build-date=${{ github.run_started_at }}
+            org.openclaw.supercronic-version=v0.2.33
+            org.openclaw.includes-vscode-tunnel=true
+            org.openclaw.includes-cron=true
+            org.openclaw.baked-entrypoint=${{ steps.base_inspect.outputs.ep }}
+            org.openclaw.baked-cmd=${{ steps.base_inspect.outputs.cmd }}
+
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Summary
+        if: always()
         run: |
           echo "### Build Result" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -157,6 +195,10 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- Image: \`${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- OpenClaw version: \`${{ steps.release.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Baked EP: \`${{ steps.base_inspect.outputs.ep }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Baked CMD: \`${{ steps.base_inspect.outputs.cmd }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Supercronic: \`v0.2.33\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- VS Code tunnel: \`enabled\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⏭️ **Skipped** — ${{ steps.decision.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"
           fi
