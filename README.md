@@ -6,8 +6,8 @@ Built automatically on top of official stable [OpenClaw releases](https://github
 
 ## What's Added
 
-| Package | Purpose |
-|---------|---------|
+| Package / Tool | Purpose |
+|----------------|---------|
 | git | Version control (GitHub skills, repo operations) |
 | gh | GitHub CLI (issue/PR management skills) |
 | python3 + pip + venv | Python runtime (image gen, data processing skills) |
@@ -16,6 +16,26 @@ Built automatically on top of official stable [OpenClaw releases](https://github
 | curl | HTTP requests (web interaction skills) |
 | ripgrep | Fast code search (code analysis skills) |
 | ffmpeg | Media processing (audio/video conversion skills) |
+| openssh-client | SSH access (remote operations) |
+| procps | Process utilities (`ps`, `pkill` — used by cron helper) |
+| VS Code CLI | VS Code tunnel for remote editing (`code tunnel`) |
+| [Supercronic](https://github.com/aptible/supercronic) | Cron scheduler for containers (version fetched dynamically at build time) |
+
+## Startup Services
+
+The custom entrypoint (`start-tunnel.sh`) launches two background services before handing off to the original OpenClaw entrypoint:
+
+1. **VS Code Tunnel** — Starts `code tunnel` in the background, logging to `/home/node/openclaw-data/vscode-tunnel.log`.
+2. **Supercronic Scheduler** — Reads a crontab from `/home/node/.openclaw/workspace/crontab`. If the file exists and is non-empty, `supercronic` runs in the background. Logs go to `/home/node/.openclaw/workspace/supercronic.log`.
+
+### Crontab Usage
+
+A placeholder crontab is created at build time. To schedule tasks, edit the file inside the running container or mount your own:
+
+```
+# /home/node/.openclaw/workspace/crontab
+*/5 * * * * /usr/local/bin/python3 /home/node/.openclaw/workspace/my_script.py >> /home/node/.openclaw/workspace/my_script.log 2>&1
+```
 
 ## Usage
 
@@ -34,11 +54,36 @@ services:
     # ... rest of your config
 ```
 
+### Pin to a specific OpenClaw version
+
+```bash
+docker pull ghcr.io/bostonvip/openclaw-custom:2026.3.8
+```
+
 ## Build Schedule
 
 - **Automatic:** Checks daily at 06:00 UTC for new stable OpenClaw releases via the GitHub API. Only rebuilds when a new version is published (e.g., `2026.3.7` → `2026.3.8`). Pre-releases and betas are ignored.
 - **On Dockerfile change:** Rebuilds when the Dockerfile is updated on `main`.
 - **On demand:** Trigger manually from the Actions tab with optional force rebuild or version override (e.g., pin to `2026.3.7` for rollback).
+
+### Dynamic Versioning
+
+Both the OpenClaw base image version and the Supercronic version are resolved dynamically at CI/CD time by querying the GitHub Releases API. No hardcoded versions in the workflow — the Dockerfile `ARG` defaults serve only as fallbacks for local builds.
+
+## Image Labels
+
+Each built image includes OCI labels for traceability:
+
+| Label | Description |
+|-------|-------------|
+| `org.openclaw.base-version` | OpenClaw upstream version used |
+| `org.openclaw.build-reason` | Why the build was triggered |
+| `org.openclaw.build-date` | Timestamp of the CI run |
+| `org.openclaw.supercronic-version` | Supercronic version installed |
+| `org.openclaw.includes-vscode-tunnel` | Whether VS Code tunnel is enabled |
+| `org.openclaw.includes-cron` | Whether cron scheduling is enabled |
+| `org.openclaw.baked-entrypoint` | Original entrypoint from the base image |
+| `org.openclaw.baked-cmd` | Original CMD from the base image |
 
 ## Updating in Docker
 
