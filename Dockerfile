@@ -26,6 +26,10 @@ RUN apt-get update && \
       ffmpeg \
       openssh-client \
       procps \
+      build-essential \
+      unzip \
+      zip \
+      sqlite3 \      
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (fast Python package manager — used by Gemini image gen and other skills)
