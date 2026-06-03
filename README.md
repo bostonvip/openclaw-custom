@@ -20,6 +20,7 @@ Built automatically on top of official stable [OpenClaw releases](https://github
 | procps | Process utilities (`ps`, `pkill` — used by cron helper) |
 | VS Code CLI | VS Code tunnel for remote editing (`code tunnel`) |
 | [Supercronic](https://github.com/aptible/supercronic) | Cron scheduler for containers (version fetched dynamically at build time) |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` CLI for the `claude-cli` backend — login with a Pro/Max subscription (version fetched dynamically at build time) |
 
 ## Startup Services
 
@@ -35,6 +36,43 @@ A placeholder crontab is created at build time. To schedule tasks, edit the file
 ```
 # /home/node/.openclaw/workspace/crontab
 */5 * * * * /usr/local/bin/python3 /home/node/.openclaw/workspace/my_script.py >> /home/node/.openclaw/workspace/my_script.log 2>&1
+```
+
+## Persisting Claude Code login
+
+The `claude` binary is **baked into the image**, so it survives container restarts and image upgrades automatically — CI reinstalls the latest stable version on every rebuild. The binary lands at `/usr/local/bin/claude` (on `PATH`), so OpenClaw auto-detects it as the `claude-cli` backend.
+
+Your **login is separate** and must be persisted on a volume, or you'll have to re-authenticate every time the container is recreated. Claude Code stores its OAuth token in `~/.claude` (`/home/node/.claude`). Mount a named volume there:
+
+```yaml
+services:
+  openclaw:
+    image: ghcr.io/bostonvip/openclaw-custom:latest
+    volumes:
+      - claude-creds:/home/node/.claude   # persists the login/OAuth token
+      # ... your other volumes
+
+volumes:
+  claude-creds:
+```
+
+Then log in **once** from inside the running container:
+
+```bash
+docker exec -it openclaw claude   # follow the OAuth prompt, choose your Pro/Max plan
+```
+
+The token is written to `/home/node/.claude/.credentials.json` on the volume and reused across restarts and upgrades.
+
+> If `claude` is somehow not picked up automatically, point OpenClaw at it explicitly:
+> set `agents.defaults.cliBackends.claude-cli.command` to `/usr/local/bin/claude`.
+
+### Pinning the Claude Code version
+
+By default CI installs the latest stable release. To pin (e.g. for rollback), override the build-arg locally or trigger a build with the Dockerfile `ARG CLAUDE_CODE_VERSION` set to a specific version:
+
+```bash
+docker build --build-arg CLAUDE_CODE_VERSION=1.2.3 -t openclaw-custom .
 ```
 
 ## Usage
@@ -80,6 +118,7 @@ Each built image includes OCI labels for traceability:
 | `org.openclaw.build-reason` | Why the build was triggered |
 | `org.openclaw.build-date` | Timestamp of the CI run |
 | `org.openclaw.supercronic-version` | Supercronic version installed |
+| `org.openclaw.claude-code-version` | Claude Code CLI version installed |
 | `org.openclaw.includes-vscode-tunnel` | Whether VS Code tunnel is enabled |
 | `org.openclaw.includes-cron` | Whether cron scheduling is enabled |
 | `org.openclaw.baked-entrypoint` | Original entrypoint from the base image |

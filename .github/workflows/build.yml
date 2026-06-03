@@ -82,6 +82,14 @@ jobs:
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
           echo "Latest supercronic release: $TAG"
 
+      - name: Fetch latest Claude Code version
+        id: claude_code
+        run: |
+          VERSION=$(curl -fsSL https://registry.npmjs.org/@anthropic-ai/claude-code/latest \
+            | jq -r '.version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Latest Claude Code version: $VERSION"
+
       - name: Verify upstream container tag exists
         id: verify
         run: |
@@ -177,6 +185,7 @@ jobs:
             OPENCLAW_EP=${{ steps.base_inspect.outputs.ep }}
             OPENCLAW_CMD=${{ steps.base_inspect.outputs.cmd }}
             SUPERCRONIC_VERSION=${{ steps.supercronic.outputs.version }}
+            CLAUDE_CODE_VERSION=${{ steps.claude_code.outputs.version }}
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ steps.release.outputs.version }}
@@ -187,6 +196,7 @@ jobs:
             org.openclaw.build-reason=${{ steps.decision.outputs.reason }}
             org.openclaw.build-date=${{ github.run_started_at }}
             org.openclaw.supercronic-version=${{ steps.supercronic.outputs.version }}
+            org.openclaw.claude-code-version=${{ steps.claude_code.outputs.version }}
             org.openclaw.includes-vscode-tunnel=true
             org.openclaw.includes-cron=true
             org.openclaw.baked-entrypoint=${{ steps.base_inspect.outputs.ep }}
@@ -210,6 +220,7 @@ jobs:
             echo "- Baked EP: \`${{ steps.base_inspect.outputs.ep }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- Baked CMD: \`${{ steps.base_inspect.outputs.cmd }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- Supercronic: \`${{ steps.supercronic.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Claude Code: \`${{ steps.claude_code.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "- VS Code tunnel: \`enabled\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "⏭️ **Skipped** — ${{ steps.decision.outputs.reason }}" >> "$GITHUB_STEP_SUMMARY"

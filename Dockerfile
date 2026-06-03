@@ -37,6 +37,25 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     mv /root/.local/bin/uv /usr/local/bin/uv && \
     mv /root/.local/bin/uvx /usr/local/bin/uvx
 
+# ╔════════════════════════════════════════════════════════════════════════╗
+# ║  Install Claude Code CLI (for Pro/Max subscription login)              ║
+# ╚════════════════════════════════════════════════════════════════════════╝
+#
+# Baked into the image layer so it survives container restarts AND image
+# upgrades (CI reinstalls it on every rebuild). The npm global prefix on the
+# Node base image is /usr/local, so the binary lands at /usr/local/bin/claude,
+# which is already on PATH — OpenClaw auto-detects it as claude-cli.
+#
+# Login credentials are NOT stored here — they live in ~/.claude and must be
+# persisted on a Docker volume (see README "Persisting Claude Code login").
+#
+# Version is resolved to the latest stable at CI time and passed in as a
+# build-arg for reproducibility; "latest" is the fallback for local builds.
+# Pin to a known-good version for rollback by overriding CLAUDE_CODE_VERSION.
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
+    claude --version
+
 # Install VS Code CLI — provides the 'code' binary used for the tunnel and 'code .'
 # Architecture-aware: picks arm64, armhf, or x64 automatically
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -103,6 +122,11 @@ RUN { \
 # Ensure workspace exists with correct ownership
 RUN mkdir -p /home/node/.openclaw/workspace && \
     chown -R 1000:1000 /home/node/.openclaw
+
+# Pre-create the Claude Code credential dir so a mounted volume gets the right
+# owner (UID 1000). The OAuth login token persists here as .credentials.json.
+RUN mkdir -p /home/node/.claude && \
+    chown -R 1000:1000 /home/node/.claude
 
 # Create placeholder crontab so container doesn't error on first boot
 RUN printf '# OpenClaw crontab — add scheduled tasks here\\n' \
