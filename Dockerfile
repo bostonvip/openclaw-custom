@@ -53,7 +53,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
 # build-arg for reproducibility; "latest" is the fallback for local builds.
 # Pin to a known-good version for rollback by overriding CLAUDE_CODE_VERSION.
 ARG CLAUDE_CODE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
+# npm >= 11 (Node 24 base) blocks package install scripts by default; Claude Code needs its
+# postinstall to fetch the native binary into the global package dir, so allow it explicitly.
+RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
     claude --version
 
 # Install VS Code CLI — provides the 'code' binary used for the tunnel and 'code .'
