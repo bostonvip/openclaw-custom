@@ -148,12 +148,27 @@ RUN { \
       echo '#!/bin/sh'; \
       echo 'set -e'; \
       echo ''; \
-      echo '# Start VS Code tunnel in background'; \
+      echo '# Start VS Code tunnel in a supervising loop (background).'; \
+      echo '# The GitHub session behind "code tunnel" can be revoked/expire; when that'; \
+      echo '# happens the process exits ("access token is no longer valid, exiting")'; \
+      echo '# and would otherwise stay dead until the container restarts. The loop'; \
+      echo '# restarts it with backoff and keeps the log bounded (5 MB).'; \
       echo 'LOG="/home/node/openclaw-data/vscode-tunnel.log"'; \
-      echo 'echo "[tunnel] $(date -Iseconds): starting" >> "$LOG"'; \
-      echo 'code tunnel --accept-server-license-terms --name openclaw >> "$LOG" 2>&1 &'; \
-      echo 'TUNNEL_PID=$!'; \
-      echo 'echo "[tunnel] PID $TUNNEL_PID" >> "$LOG"'; \
+      echo 'TUNNEL_NAME="${VSCODE_TUNNEL_NAME:-openclaw}"'; \
+      echo 'if [ "${VSCODE_TUNNEL_ENABLED:-true}" = "true" ]; then'; \
+      echo '  ('; \
+      echo '    DELAY=15'; \
+      echo '    while true; do'; \
+      echo '      if [ -f "$LOG" ] && [ "$(stat -c %s "$LOG")" -gt 5242880 ]; then : > "$LOG"; fi'; \
+      echo '      echo "[tunnel] $(date -Iseconds): starting (name=$TUNNEL_NAME)" >> "$LOG"'; \
+      echo '      code tunnel --accept-server-license-terms --name "$TUNNEL_NAME" >> "$LOG" 2>&1 || true'; \
+      echo '      echo "[tunnel] $(date -Iseconds): exited, restarting in ${DELAY}s (re-run: code tunnel user login --provider github)" >> "$LOG"'; \
+      echo '      sleep "$DELAY"'; \
+      echo '      [ "$DELAY" -lt 300 ] && DELAY=$((DELAY * 2))'; \
+      echo '    done'; \
+      echo '  ) &'; \
+      echo '  echo "[tunnel] supervisor PID $!" >> "$LOG"'; \
+      echo 'fi'; \
       echo ''; \
       echo '# Start supercronic scheduler in background'; \
       echo '/usr/local/bin/start-openclaw-cron.sh'; \

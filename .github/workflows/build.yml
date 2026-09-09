@@ -17,10 +17,18 @@ on:
           - "false"
           - "true"
       version_override:
-        description: "Pin to a specific OpenClaw version (e.g. 2026.3.7). Leave empty for latest stable."
+        description: "Pin to a specific OpenClaw version (e.g. 2026.9.3). Leave empty to follow the channel below."
         required: false
         default: ""
         type: string
+      channel:
+        description: "npm dist-tag to follow when no override is given"
+        required: false
+        default: "latest"
+        type: choice
+        options:
+          - "latest"
+          - "extended-stable"
 
   # Rebuild when the Dockerfile itself changes
   push:
@@ -53,23 +61,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch latest stable OpenClaw release
+      - name: Resolve target OpenClaw version
         id: release
         run: |
           OVERRIDE="${{ github.event.inputs.version_override }}"
+          CHANNEL="${{ github.event.inputs.channel || 'latest' }}"
           if [ -n "$OVERRIDE" ]; then
-            echo "version=$OVERRIDE" >> "$GITHUB_OUTPUT"
-            echo "Using manual override: $OVERRIDE"
+            VERSION="${OVERRIDE#v}"
+            echo "Using manual override: $VERSION"
           else
-            TAG_NAME=$(curl -fsSL \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              https://api.github.com/repos/openclaw/openclaw/releases/latest \
-              | jq -r '.tag_name')
-            VERSION="${TAG_NAME#v}"
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "Latest stable release: $VERSION (git tag: $TAG_NAME)"
+            # GitHub's /releases/latest flag stopped moving after 2026.7.1 (newer releases are
+            # published without the "Latest" mark), so follow the npm dist-tag instead. This is
+            # the same source the Gateway's own update-check uses.
+            VERSION=$(curl -fsSL https://registry.npmjs.org/openclaw \
+              | jq -r --arg c "$CHANNEL" '."dist-tags"[$c]')
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              echo "::error::Could not resolve npm dist-tag '$CHANNEL' for openclaw"
+              exit 1
+            fi
+            echo "npm dist-tag '$CHANNEL' resolves to: $VERSION"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Fetch latest supercronic release
         id: supercronic
