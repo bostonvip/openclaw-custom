@@ -143,3 +143,11 @@ docker restart openclaw
 Edit the `Dockerfile` to add or remove packages. The workflow will automatically rebuild on push to `main`.
 
 To remove packages you don't need (e.g., `ffmpeg` saves ~100MB), simply delete the line from the `apt-get install` block.
+
+## Maintenance: scheduled-workflow inactivity
+
+GitHub automatically disables scheduled workflows in public repos after 60 days without repository activity (commits, merges, releases — workflow runs and GHCR pushes do not count). When the "will be disabled soon" banner appears, push any commit (a README edit does not trigger a build, since the push trigger only watches `Dockerfile`). If it has already been disabled:
+
+```bash
+gh workflow enable build.yml -R bostonvip/openclaw-custom
+```
